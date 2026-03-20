@@ -7,6 +7,7 @@ import httpErrors from "http-errors";
 import { v4 as uuidv4 } from "uuid";
 
 import { UPLOAD_PATH } from "@web-speed-hackathon-2026/server/src/paths";
+import { convertMovieToGif } from "@web-speed-hackathon-2026/server/src/utils/convert_movie";
 
 // 変換した動画の拡張子
 const EXTENSION = "gif";
@@ -22,15 +23,18 @@ movieRouter.post("/movies", async (req, res) => {
   }
 
   const type = await fileTypeFromBuffer(req.body);
-  if (type === undefined || type.ext !== EXTENSION) {
+  if (type === undefined || (!type.mime.startsWith("video/") && type.ext !== EXTENSION)) {
     throw new httpErrors.BadRequest("Invalid file type");
   }
+
+  // GIF 以外の動画ならサーバー側で GIF に変換
+  const gifBuffer = type.ext === EXTENSION ? req.body : await convertMovieToGif(req.body);
 
   const movieId = uuidv4();
 
   const filePath = path.resolve(UPLOAD_PATH, `./movies/${movieId}.${EXTENSION}`);
   await fs.mkdir(path.resolve(UPLOAD_PATH, "movies"), { recursive: true });
-  await fs.writeFile(filePath, req.body);
+  await fs.writeFile(filePath, gifBuffer);
 
   return res.status(200).type("application/json").send({ id: movieId });
 });
