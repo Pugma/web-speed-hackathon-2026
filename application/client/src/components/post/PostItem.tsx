@@ -52,17 +52,17 @@ export const PostItem = ({ post }: Props) => {
           </div>
           {post.images?.length > 0 ? (
             <div className="relative mt-2 w-full">
-              <ImageArea images={post.images} />
+              <ImageArea images={post.images} isFirst={true} />
             </div>
           ) : null}
           {post.movie ? (
             <div className="relative mt-2 w-full">
-              <MovieArea movie={post.movie} />
+              <MovieArea movie={post.movie} isFirst={true} />
             </div>
           ) : null}
           {post.sound ? (
             <div className="relative mt-2 w-full">
-              <SoundArea sound={post.sound} />
+              <SoundArea sound={post.sound} isFirst={true} />
             </div>
           ) : null}
           <p className="mt-2 text-sm sm:mt-4">
