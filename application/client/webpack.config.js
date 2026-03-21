@@ -94,6 +94,26 @@ const config = {
       inject: false,
       template: path.resolve(SRC_PATH, "./index.html"),
     }),
+    // Inline main CSS into HTML to eliminate render-blocking request
+    {
+      apply(compiler) {
+        compiler.hooks.compilation.tap("InlineCssPlugin", (compilation) => {
+          HtmlWebpackPlugin.getHooks(compilation).beforeEmit.tapAsync("InlineCssPlugin", (data, cb) => {
+            const mainCss = compilation.assets["styles/main.css"];
+            if (mainCss) {
+              const cssContent = mainCss.source();
+              data.html = data.html
+                .replace(/<link rel="preload" href="\/styles\/main\.css" as="style"\s*\/>/, "")
+                .replace(
+                  /<link rel="stylesheet" href="\/styles\/main\.css"\s*\/>/,
+                  `<style>${cssContent}</style>`,
+                );
+            }
+            cb(null, data);
+          });
+        });
+      },
+    },
     ...(process.env.ANALYZE ? [new BundleAnalyzerPlugin()] : []),
   ],
   resolve: {
