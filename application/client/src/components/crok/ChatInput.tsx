@@ -17,6 +17,22 @@ import {
 import { getTokenizer } from "@web-speed-hackathon-2026/client/src/utils/kuromoji_tokenizer";
 import { fetchJSON } from "@web-speed-hackathon-2026/client/src/utils/fetchers";
 
+let cachedCandidates: string[] | null = null;
+let candidatesPromise: Promise<string[]> | null = null;
+
+function getCandidates(): Promise<string[]> {
+  if (cachedCandidates) return Promise.resolve(cachedCandidates);
+  if (!candidatesPromise) {
+    candidatesPromise = fetchJSON<{ suggestions: string[] }>("/api/v1/crok/suggestions").then(
+      ({ suggestions }) => {
+        cachedCandidates = suggestions;
+        return suggestions;
+      },
+    );
+  }
+  return candidatesPromise;
+}
+
 interface Props {
   isStreaming: boolean;
   onSendMessage: (message: string) => void;
@@ -120,9 +136,7 @@ export const ChatInput = ({ isStreaming, onSendMessage }: Props) => {
         return;
       }
 
-      const { suggestions: candidates } = await fetchJSON<{ suggestions: string[] }>(
-        "/api/v1/crok/suggestions",
-      );
+      const candidates = await getCandidates();
       if (cancelled) {
         return;
       }
