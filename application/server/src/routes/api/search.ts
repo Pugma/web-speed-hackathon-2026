@@ -43,58 +43,45 @@ searchRouter.get("/search", async (req, res) => {
   // テキスト検索条件
   const textWhere = searchTerm ? { text: { [Op.like]: searchTerm } } : {};
 
-  const [[postsByText, postsByUser], sentiment] = await Promise.all([
-    Promise.all([
-      Post.findAll({
-        where: { ...textWhere, ...dateWhere },
-      }),
+  // Stage 1: IDだけ1クエリで取得（テキスト一致 OR ユーザー名一致）
+  const postWhere: any = { ...dateWhere };
+  if (searchTerm) {
+    postWhere[Op.or] = [
+      { text: { [Op.like]: searchTerm } },
+      { "$user.username$": { [Op.like]: searchTerm } },
+      { "$user.name$": { [Op.like]: searchTerm } },
+    ];
+  } else {
+    Object.assign(postWhere, textWhere);
+  }
 
-      // ユーザー名/名前での検索（キーワードがある場合のみ）
-      searchTerm
-        ? Post.findAll({
-            include: [
-              {
-                association: "user",
-                attributes: { exclude: ["profileImageId"] },
-                include: [{ association: "profileImage" }],
-                required: true,
-                where: {
-                  [Op.or]: [
-                    { username: { [Op.like]: searchTerm } },
-                    { name: { [Op.like]: searchTerm } },
-                  ],
-                },
-              },
-              { association: "images", through: { attributes: [] } },
-              { association: "movie" },
-              { association: "sound" },
-            ],
-            where: dateWhere,
-          })
-        : Promise.resolve([]),
-    ]),
+  const [ids, sentiment] = await Promise.all([
+    Post.unscoped().findAll({
+      attributes: ["id"],
+      include: searchTerm
+        ? [{ association: "user", attributes: [], required: false }]
+        : [],
+      where: postWhere,
+      order: [["createdAt", "DESC"]],
+      limit,
+      offset,
+      raw: true,
+      subQuery: false,
+    }),
     keywords
       ? analyzeSentiment(keywords).then((r) => r.label)
       : Promise.resolve("neutral" as const),
   ]);
 
-  const postIdSet = new Set<string>();
-  const mergedPosts: typeof postsByText = [];
+  const postIds = ids.map((r) => r.id);
 
-  for (const post of [...postsByText, ...postsByUser]) {
-    if (!postIdSet.has(post.id)) {
-      postIdSet.add(post.id);
-      mergedPosts.push(post);
-    }
-  }
-
-  mergedPosts.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-  const start = offset ?? 0;
-  const result = mergedPosts.slice(
-    start,
-    limit != null ? start + limit : undefined,
-  );
+  // Stage 2: IDで本体を取得（defaultScope適用）
+  const result = postIds.length > 0
+    ? await Post.findAll({
+        where: { id: { [Op.in]: postIds } },
+        order: [["createdAt", "DESC"]],
+      })
+    : [];
 
   res.setHeader("X-Sentiment", sentiment);
 
