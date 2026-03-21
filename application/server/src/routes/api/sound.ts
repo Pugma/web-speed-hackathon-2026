@@ -6,7 +6,8 @@ import { fileTypeFromBuffer } from "file-type";
 import httpErrors from "http-errors";
 import { v4 as uuidv4 } from "uuid";
 
-import { UPLOAD_PATH } from "@web-speed-hackathon-2026/server/src/paths";
+import { PUBLIC_PATH, UPLOAD_PATH } from "@web-speed-hackathon-2026/server/src/paths";
+import { calculatePeaks } from "@web-speed-hackathon-2026/server/src/utils/calculate_sound_svg";
 import { convertSoundToMp3 } from "@web-speed-hackathon-2026/server/src/utils/convert_sound";
 import { extractMetadataFromSound } from "@web-speed-hackathon-2026/server/src/utils/extract_metadata_from_sound";
 
@@ -14,6 +15,39 @@ import { extractMetadataFromSound } from "@web-speed-hackathon-2026/server/src/u
 const EXTENSION = "mp3";
 
 export const soundRouter = Router();
+
+async function findSoundFile(soundId: string): Promise<string> {
+  const filename = `sounds/${soundId}.${EXTENSION}`;
+  for (const dir of [UPLOAD_PATH, PUBLIC_PATH]) {
+    const filePath = path.resolve(dir, filename);
+    try {
+      await fs.access(filePath);
+      return filePath;
+    } catch {
+      // try next
+    }
+  }
+  throw new httpErrors.NotFound("Sound file not found");
+}
+
+// peaks キャッシュ（同じ音声の再計算を避ける）
+const peaksCache = new Map<string, { max: number; peaks: number[] }>();
+
+soundRouter.get("/sounds/:soundId/peaks", async (req, res) => {
+  const { soundId } = req.params;
+
+  const cached = peaksCache.get(soundId);
+  if (cached) {
+    return res.status(200).type("application/json").send(cached);
+  }
+
+  const filePath = await findSoundFile(soundId);
+  const result = await calculatePeaks(filePath);
+
+  peaksCache.set(soundId, result);
+
+  return res.status(200).type("application/json").send(result);
+});
 
 soundRouter.post("/sounds", async (req, res) => {
   if (req.session.userId === undefined) {
