@@ -2,6 +2,7 @@ import { Router } from "express";
 import { Op } from "sequelize";
 
 import { Post } from "@web-speed-hackathon-2026/server/src/models";
+import { analyzeSentiment } from "@web-speed-hackathon-2026/server/src/utils/negaposi_analyzer";
 import { parseSearchQuery } from "@web-speed-hackathon-2026/server/src/utils/parse_search_query.js";
 
 export const searchRouter = Router();
@@ -42,34 +43,39 @@ searchRouter.get("/search", async (req, res) => {
   // テキスト検索条件
   const textWhere = searchTerm ? { text: { [Op.like]: searchTerm } } : {};
 
-  const [postsByText, postsByUser] = await Promise.all([
-    Post.findAll({
-      where: { ...textWhere, ...dateWhere },
-    }),
+  const [[postsByText, postsByUser], sentiment] = await Promise.all([
+    Promise.all([
+      Post.findAll({
+        where: { ...textWhere, ...dateWhere },
+      }),
 
-    // ユーザー名/名前での検索（キーワードがある場合のみ）
-    searchTerm
-      ? Post.findAll({
-          include: [
-            {
-              association: "user",
-              attributes: { exclude: ["profileImageId"] },
-              include: [{ association: "profileImage" }],
-              required: true,
-              where: {
-                [Op.or]: [
-                  { username: { [Op.like]: searchTerm } },
-                  { name: { [Op.like]: searchTerm } },
-                ],
+      // ユーザー名/名前での検索（キーワードがある場合のみ）
+      searchTerm
+        ? Post.findAll({
+            include: [
+              {
+                association: "user",
+                attributes: { exclude: ["profileImageId"] },
+                include: [{ association: "profileImage" }],
+                required: true,
+                where: {
+                  [Op.or]: [
+                    { username: { [Op.like]: searchTerm } },
+                    { name: { [Op.like]: searchTerm } },
+                  ],
+                },
               },
-            },
-            { association: "images", through: { attributes: [] } },
-            { association: "movie" },
-            { association: "sound" },
-          ],
-          where: dateWhere,
-        })
-      : Promise.resolve([]),
+              { association: "images", through: { attributes: [] } },
+              { association: "movie" },
+              { association: "sound" },
+            ],
+            where: dateWhere,
+          })
+        : Promise.resolve([]),
+    ]),
+    keywords
+      ? analyzeSentiment(keywords).then((r) => r.label)
+      : Promise.resolve("neutral" as const),
   ]);
 
   const postIdSet = new Set<string>();
@@ -89,6 +95,8 @@ searchRouter.get("/search", async (req, res) => {
     start,
     limit != null ? start + limit : undefined,
   );
+
+  res.setHeader("X-Sentiment", sentiment);
 
   return res.status(200).type("application/json").send(result);
 });
