@@ -6,12 +6,14 @@ import { Modal } from "@web-speed-hackathon-2026/client/src/components/modal/Mod
 interface Props {
   alt: string;
   src: string;
+  fetchPriority: "high" | undefined;
+  loading: "lazy" | undefined;
 }
 
 /**
  * アスペクト比を維持したまま、要素のコンテンツボックス全体を埋めるように画像を拡大縮小します
  */
-export const CoveredImage = ({ alt, src }: Props) => {
+export const CoveredImage = ({ alt, src, fetchPriority, loading }: Props) => {
   const dialogId = useId();
   // ダイアログの背景をクリックしたときに投稿詳細ページに遷移しないようにする
   const handleDialogClick = useCallback((ev: MouseEvent<HTMLDialogElement>) => {
@@ -20,7 +22,13 @@ export const CoveredImage = ({ alt, src }: Props) => {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <img alt={alt} className="absolute h-full w-full object-cover" src={src} />
+      <img
+        alt={alt}
+        className="absolute h-full w-full object-cover"
+        src={src}
+        fetchPriority={fetchPriority}
+        loading={loading}
+      />
 
       <button
         className="border-cax-border bg-cax-surface-raised/90 text-cax-text-muted hover:bg-cax-surface absolute right-1 bottom-1 rounded-full border px-2 py-1 text-center text-xs"
