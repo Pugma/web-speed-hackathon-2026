@@ -26,32 +26,60 @@ directMessageRouter.get("/dm", async (req, res) => {
     ],
   });
 
-  const result = await Promise.all(
-    conversations.map(async (conv) => {
-      const peerId = conv.initiatorId !== req.session.userId ? conv.initiatorId : conv.memberId;
+  if (conversations.length === 0) {
+    return res.status(200).type("application/json").send([]);
+  }
 
-      const [lastMessage, unreadCount] = await Promise.all([
-        DirectMessage.findOne({
-          where: { conversationId: conv.id },
-          order: [["createdAt", "DESC"]],
-        }),
-        DirectMessage.count({
-          where: { conversationId: conv.id, senderId: peerId, isRead: false },
-        }),
-      ]);
+  const conversationIds = conversations.map((c) => c.id);
 
-      if (lastMessage == null) return null;
+  // Batch: fetch last message per conversation in one query
+  const allLastMessages = await DirectMessage.unscoped().findAll({
+    where: { conversationId: { [Op.in]: conversationIds } },
+    attributes: [
+      "id", "conversationId", "senderId", "body", "isRead", "createdAt", "updatedAt",
+      [DirectMessage.sequelize!.literal(
+        `ROW_NUMBER() OVER (PARTITION BY "DirectMessage"."conversationId" ORDER BY "DirectMessage"."createdAt" DESC)`
+      ), "rn"],
+    ],
+    include: [{ association: "sender", include: [{ association: "profileImage" }] }],
+  });
+  const lastMessageMap = new Map<string, typeof allLastMessages[0]>();
+  for (const msg of allLastMessages) {
+    if ((msg.get("rn" as keyof typeof msg) as unknown as number) === 1) {
+      lastMessageMap.set(msg.conversationId, msg);
+    }
+  }
 
+  // Batch: count unread per conversation in one query
+  const unreadCounts = await DirectMessage.unscoped().findAll({
+    where: {
+      conversationId: { [Op.in]: conversationIds },
+      senderId: { [Op.ne]: req.session.userId },
+      isRead: false,
+    },
+    attributes: [
+      "conversationId",
+      [DirectMessage.sequelize!.fn("COUNT", DirectMessage.sequelize!.col("id")), "cnt"],
+    ],
+    group: ["conversationId"],
+    raw: true,
+  });
+  const unreadMap = new Map<string, number>();
+  for (const row of unreadCounts as any[]) {
+    unreadMap.set(row.conversationId, Number(row.cnt));
+  }
+
+  const filtered = conversations
+    .map((conv) => {
+      const lastMessage = lastMessageMap.get(conv.id);
+      if (!lastMessage) return null;
       return {
         ...conv.toJSON(),
         messages: [lastMessage.toJSON()],
-        hasUnread: unreadCount > 0,
+        hasUnread: (unreadMap.get(conv.id) ?? 0) > 0,
         totalMessages: 0,
       };
-    }),
-  );
-
-  const filtered = result
+    })
     .filter((c) => c != null)
     .sort(
       (a, b) =>
@@ -256,9 +284,22 @@ directMessageRouter.post("/dm/:conversationId/read", async (req, res) => {
     { isRead: true },
     {
       where: { conversationId: conversation.id, senderId: peerId, isRead: false },
-      individualHooks: true,
     },
   );
+
+  // Manually emit unread count update (instead of triggering afterSave for each row)
+  const unreadCount = await DirectMessage.unscoped().count({
+    where: {
+      senderId: { [Op.ne]: req.session.userId },
+      isRead: false,
+      conversationId: {
+        [Op.in]: DirectMessage.sequelize!.literal(
+          `(SELECT "id" FROM "DirectMessageConversations" WHERE "initiatorId" = '${req.session.userId}' OR "memberId" = '${req.session.userId}')`
+        ),
+      },
+    },
+  });
+  eventhub.emit(`dm:unread/${req.session.userId}`, { unreadCount });
 
   return res.status(200).type("application/json").send({});
 });
