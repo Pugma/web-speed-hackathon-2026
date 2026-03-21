@@ -9,9 +9,10 @@ import { getSoundPath } from "@web-speed-hackathon-2026/client/src/utils/get_pat
 
 interface Props {
   sound: Models.Sound;
+  preload: "auto" | "none";
 }
 
-export const SoundPlayer = ({ sound }: Props) => {
+export const SoundPlayer = ({ sound, preload }: Props) => {
   const { data, isLoading } = useFetch(getSoundPath(sound.id), fetchBinary);
 
   const blobUrl = useMemo(() => {
@@ -43,7 +44,7 @@ export const SoundPlayer = ({ sound }: Props) => {
 
   return (
     <div className="bg-cax-surface-subtle flex h-full w-full items-center justify-center">
-      <audio ref={audioRef} loop={true} onTimeUpdate={handleTimeUpdate} src={blobUrl} />
+      <audio ref={audioRef} loop={true} onTimeUpdate={handleTimeUpdate} src={blobUrl} preload={preload} />
       <div className="p-2">
         <button
           className="bg-cax-accent text-cax-surface-raised flex h-8 w-8 items-center justify-center rounded-full text-sm hover:opacity-75"

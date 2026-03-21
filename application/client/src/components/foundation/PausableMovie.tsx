@@ -6,12 +6,13 @@ import { FontAwesomeIcon } from "@web-speed-hackathon-2026/client/src/components
 
 interface Props {
   src: string;
+  preload?: "auto" | "none";
 }
 
 /**
  * クリックすると再生・一時停止を切り替えます。
  */
-export const PausableMovie = ({ src }: Props) => {
+export const PausableMovie = ({ src, preload }: Props) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -62,6 +63,7 @@ export const PausableMovie = ({ src }: Props) => {
           muted
           onLoadedData={handleLoadedData}
           playsInline
+          preload={preload}
           src={src}
         />
         {isLoaded && (
