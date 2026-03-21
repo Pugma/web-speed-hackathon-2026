@@ -78,8 +78,9 @@ export function initDirectMessage(sequelize: Sequelize) {
   );
 
   DirectMessage.addHook("afterSave", "onDmSaved", async (message) => {
+    // Fetch message with sender association for the event payload
     const directMessage = await DirectMessage.findByPk(message.get().id);
-    const conversation = await DirectMessageConversation.findByPk(directMessage?.conversationId);
+    const conversation = await DirectMessageConversation.unscoped().findByPk(message.get().conversationId);
 
     if (directMessage == null || conversation == null) {
       return;
@@ -90,21 +91,17 @@ export function initDirectMessage(sequelize: Sequelize) {
         ? conversation.memberId
         : conversation.initiatorId;
 
-    const unreadCount = await DirectMessage.count({
-      distinct: true,
+    // Use a simple count query with direct conversationId filter instead of joining
+    const unreadCount = await DirectMessage.unscoped().count({
       where: {
         senderId: { [Op.ne]: receiverId },
         isRead: false,
-      },
-      include: [
-        {
-          association: "conversation",
-          where: {
-            [Op.or]: [{ initiatorId: receiverId }, { memberId: receiverId }],
-          },
-          required: true,
+        conversationId: {
+          [Op.in]: DirectMessage.sequelize!.literal(
+            `(SELECT "id" FROM "DirectMessageConversations" WHERE "initiatorId" = '${receiverId}' OR "memberId" = '${receiverId}')`
+          ),
         },
-      ],
+      },
     });
 
     eventhub.emit(`dm:conversation/${conversation.id}:message`, directMessage);
